@@ -1,4 +1,4 @@
-# Makefile for Proxy Lab 
+# Makefile for Proxy Lab
 #
 # You may modify this file any way you like (except for the handin
 # rule). You instructor will type "make" on your specific Makefile to
@@ -8,7 +8,7 @@ CC = gcc
 CFLAGS = -g -Wall
 LDFLAGS = -lpthread
 
-all: proxy
+all: proxy echoclient echoserver
 
 csapp.o: csapp.c csapp.h
 	$(CC) $(CFLAGS) -c csapp.c
@@ -19,6 +19,18 @@ proxy.o: proxy.c csapp.h
 proxy: proxy.o csapp.o
 	$(CC) $(CFLAGS) proxy.o csapp.o -o proxy $(LDFLAGS)
 
+echoclient.o: ../echoclient.c
+	$(CC) $(CFLAGS) -c ../echoclient.c
+
+echoserver.o: ../echoserver.c
+	$(CC) $(CFLAGS) -c ../echoserver.c
+
+echoclient: echoclient.o csapp.o
+	$(CC) $(CFLAGS) echoclient.o csapp.o -o echoclient $(LDFLAGS)
+
+echoserver: echoserver.o csapp.o
+	$(CC) $(CFLAGS) echoserver.o csapp.o -o echoserver $(LDFLAGS)
+
 # Creates a tarball in ../proxylab-handin.tar that you can then
 # hand in. DO NOT MODIFY THIS!
 handin:
@@ -26,4 +38,3 @@ handin:
 
 clean:
 	rm -f *~ *.o proxy core *.tar *.zip *.gzip *.bzip *.gz
-
