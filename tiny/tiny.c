@@ -55,7 +55,7 @@ void doit(int fd)
   printf("Request headers:\n");
   printf("%s", buf);
   sscanf(buf, "%s %s %s", method, uri, version);
-  if (!(strcasecmp(method, "GET") == 0|| strcasecmp(method, "HEAD") == 0)) {
+  if (!(strcasecmp(method, "GET") == 0 || strcasecmp(method, "HEAD") == 0)) {
     clienterror(fd, method, "501", "Not implemented", "Tiny does not implement this method");
     return;
   }
