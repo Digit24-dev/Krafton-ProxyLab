@@ -9,12 +9,12 @@
 static const char *user_agent_hdr =
     "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
 
+int parse_uri(char *uri, char *filename, char *host, char *port);
 void read_response(rio_t *rp, char *content_length, char *res_header);
 void do_proxy(int fd);
 void read_requesthdrs(int fd, rio_t *rp, char *header, char *host);
 void serve_static(int fd, char *filename, int filesize, char *method);
 void get_filetype(char *filename, char *filetype);
-// void serve_dynamic(int fd, char *filename, char *cgiargs, char *method);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg,
                  char *longmsg);
 
@@ -49,7 +49,7 @@ void do_proxy(int fd)
 {
   char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE], header[MAXLINE];
   char filename[MAXLINE], host[MAXLINE], *port = NULL;
-
+  char http_port[] = "80";
   rio_t rio, rio_client;
 
   Rio_readinitb(&rio, fd);
@@ -65,11 +65,11 @@ void do_proxy(int fd)
 
   read_requesthdrs(fd, &rio, header, host);
 
-  // Port 
+  // Port forwarding
   {
     char *p = index(host, ':');
     if (p == NULL) {
-      strcpy(port, "80");
+      port = http_port;
     } else {
       *p = '\0';
       port = p + 1;
@@ -82,14 +82,15 @@ void do_proxy(int fd)
     clienterror(fd, filename, "404", "Not found", "Tiny couldn't find this file");
     return;
   }
-  
+
   // Connection Established
   char str_conn[]  = "Connection: close\r\n";
   char str_proxyconn[] = "Proxy-Connection: close\r\n";
   char contents_length[MAXLINE];
 
   // Method
-  sprintf(buf, "%s / %s\r\n", method, version);
+  parse_uri(uri, filename, host, port);
+  sprintf(buf, "%s %s %s\r\n", method, filename, version);
 
   // Headers
   strcat(buf, user_agent_hdr);
@@ -108,7 +109,6 @@ void do_proxy(int fd)
   // Response Header
   printf("\nResponse headers:\n");
   read_response(&rio_client, contents_length, response_header);
-  printf("%s", response_header);
 
   size_t i_contents_length = (size_t)atol(contents_length);
 
@@ -174,6 +174,7 @@ void read_requesthdrs(int fd, rio_t *rp, char *header, char *host)
     }
     if (strstr(buf, "Connection:"))
       continue;
+    // 아이디어 -> connection 지우고 버퍼 상에서 추가하기
 
     if (strcmp(buf, "\r\n"))
       strcat(header, buf);
@@ -181,4 +182,23 @@ void read_requesthdrs(int fd, rio_t *rp, char *header, char *host)
   } while (strcmp(buf, "\r\n"));
 
   return;
+}
+
+int parse_uri(char *uri, char *filename, char *host, char *port)
+{
+  char *ptr;
+
+  // Host parse
+  if ((ptr = strstr(uri, host)) != NULL) {
+    ptr += strlen(host) + 1;
+    strcpy(filename, ptr);
+  }
+
+  // Port parse
+  if ((ptr = strstr(ptr, port)) != NULL) {
+    ptr += strlen(port);
+    strcpy(filename, ptr);
+  }
+
+  return 0;
 }
