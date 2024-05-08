@@ -1,13 +1,9 @@
 #include <stdio.h>
 #include "csapp.h"
-#include "sbuf.h"
 
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE 1049000
 #define MAX_OBJECT_SIZE 102400
-
-#define MAX_THREADS 4
-#define SBUFSIZE    16
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr =
@@ -22,32 +18,11 @@ void get_filetype(char *filename, char *filetype);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg,
                  char *longmsg);
 
-/* threads */
-sbuf_t sbuf;
-
-void *thread(void *vargp)
-{
-  Pthread_detach(pthread_self());
-  while (1)
-  {
-    int connfd = sbuf_remove(&sbuf);
-    do_proxy(connfd);
-    Close(connfd);
-  }
-}
-
 int main(int argc, char **argv) {
-  int listenfd, connfd, i;
+  int listenfd, connfd;
   char hostname[MAXLINE], port[MAXLINE];
   socklen_t clientlen;
   struct sockaddr_storage clientaddr;
-
-  /* threads */
-  pthread_t tid;
-  sbuf_init(&sbuf, SBUFSIZE);
-  
-  for (i = 0; i < MAX_THREADS; i++)
-    Pthread_create(&tid, NULL, thread, NULL);
 
   /* Check command line args */
   if (argc != 2) {
@@ -63,9 +38,8 @@ int main(int argc, char **argv) {
     Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE,
                 0);
     printf("Accepted connection from (%s, %s)\n", hostname, port);
-    sbuf_insert(&sbuf, connfd);
-    // do_proxy(connfd);
-    // Close(connfd);
+    do_proxy(connfd);   // line:netp:tiny:doit
+    Close(connfd);  // line:netp:tiny:close
   }
   
   return 0;
