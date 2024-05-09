@@ -19,7 +19,10 @@ proxy.o: proxy.c csapp.h
 sbuf.o: sbuf.c sbuf.h
 	$(CC) $(CFLAGS) -c sbuf.c
 
-proxy: proxy.o csapp.o sbuf.o
+# hash.o: hash.c hash.h
+# 	$(CC) $(CFLAGS) -c hash.c
+
+proxy: proxy.o csapp.o sbuf.o #hash.o
 	$(CC) $(CFLAGS) proxy.o csapp.o sbuf.o -o proxy $(LDFLAGS)
 
 # echoclient.o: ../echoclient.c

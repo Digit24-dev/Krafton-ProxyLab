@@ -1,12 +1,10 @@
 #include <stdio.h>
 #include "csapp.h"
 #include "sbuf.h"
-#include "hash.h"
 
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE 1049000  // 1MB
 #define MAX_OBJECT_SIZE 102400  // 100KB
-#define MAX_CACHENODE_SIZE  10
 
 #define MAX_THREADS 4
 #define SBUFSIZE    16
@@ -24,15 +22,8 @@ void get_filetype(char *filename, char *filetype);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg,
                  char *longmsg);
 
-/* cache */
-void init_cache();
-void deinit_cache();
-int search_cache(char *uri);
-void cache_insert(char *url, void *data, size_t data_size);
-void cache_remove();
-
 /* threads */
-sbuf_t sbuf, sbuf_cache;
+sbuf_t sbuf;
 
 void *thread(void *vargp)
 {
@@ -45,116 +36,6 @@ void *thread(void *vargp)
   }
 }
 
-/* cache */
-typedef struct cache_t
-{
-  int size;
-  int refer_cnt;
-  char *url;
-  void *data;
-} cache_node;
-
-typedef struct proxy_cache
-{
-  unsigned int total_size;
-  cache_node *cache[MAX_CACHENODE_SIZE];
-} proxy_cache_t;
-
-proxy_cache_t pcache;
-
-void init_cache()
-{
-  pcache.total_size = 0;
-  for (size_t i = 0; i < MAX_CACHENODE_SIZE; i++)
-  {
-    pcache.cache[i] = NULL;
-  }
-}
-
-void deinit_cache()
-{
-  for (size_t i = 0; i < MAX_CACHENODE_SIZE; i++)
-  {
-    if (pcache.cache[i] == NULL) continue;
-    Free(pcache.cache[i]->data);
-    Free(pcache.cache[i]->url);
-  }
-  // Free(pcache.cache);
-}
-
-// return hit(1) or miss(0)
-int search_cache(char *uri)
-{
-  for (size_t i = 0; i < MAX_CACHENODE_SIZE; i++)
-  {
-    if (pcache.cache[i] == NULL) continue;
-    else if (strstr(pcache.cache[i]->url, uri)) {
-      pcache.cache[i]->refer_cnt++;
-      return i;
-    }
-  }
-  return -1;
-}
-
-void cache_insert(char *url, void *data, size_t data_size)
-{
-  // remove while affordable.
-  while (data_size > MAX_CACHE_SIZE - pcache.total_size)
-    cache_remove();
-
-  char *temp = Malloc(strlen(url));
-  strcpy(temp, url);
-
-  for (size_t i = 0; i < MAX_CACHENODE_SIZE; i++)
-  {
-    if (pcache.cache[i] != NULL) continue;
-
-    pcache.cache[i] = Malloc(sizeof(cache_node));
-
-    P(&sbuf_cache.slots);
-    P(&sbuf_cache.mutex);
-
-    pcache.cache[i]->url = temp;
-    pcache.cache[i]->refer_cnt = 0;
-    pcache.cache[i]->size = data_size;
-    pcache.cache[i]->data = data;
-    pcache.total_size += data_size;
-    
-    V(&sbuf_cache.mutex);
-    V(&sbuf_cache.items);
-
-    break;
-  }
-}
-
-// POLICY : LRU
-void cache_remove()
-{
-  int min = __INT32_MAX__, idx = 0;
-
-  for (size_t i = 0; i < MAX_CACHENODE_SIZE; i++)
-  {
-    if (pcache.cache[i] == NULL) continue;
-    else if (pcache.cache[i]->refer_cnt < min) {
-      min = pcache.cache[i]->refer_cnt;
-      idx = i;
-    }
-  }
-  if (min == __INT32_MAX__) return;
-  
-  // delete cache
-  P(&sbuf_cache.items);
-  P(&sbuf_cache.mutex);
-
-  pcache.total_size -= pcache.cache[idx]->size;
-  Free(pcache.cache[idx]->data);
-  Free(pcache.cache[idx]->url);
-  Free(pcache.cache);
-
-  V(&sbuf_cache.mutex);
-  V(&sbuf_cache.slots);
-}
-
 int main(int argc, char **argv) {
   int listenfd, connfd, i;
   char hostname[MAXLINE], port[MAXLINE];
@@ -164,10 +45,6 @@ int main(int argc, char **argv) {
   /* threads */
   pthread_t tid;
   sbuf_init(&sbuf, SBUFSIZE);
-  sbuf_init(&sbuf_cache, SBUFSIZE);
-
-  /* cache */
-  init_cache();
 
   for (i = 0; i < MAX_THREADS; i++)
     Pthread_create(&tid, NULL, thread, NULL);
@@ -187,9 +64,10 @@ int main(int argc, char **argv) {
                 0);
     printf("Accepted connection from (%s, %s)\n", hostname, port);
     sbuf_insert(&sbuf, connfd);
+    // do_proxy(connfd);
+    // Close(connfd);
   }
   
-  deinit_cache();
   return 0;
 }
 
@@ -197,7 +75,7 @@ void do_proxy(int fd)
 {
   char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE], header[MAXLINE];
   char filename[MAXLINE], host[MAXLINE], *port = NULL;
-  const char http_port[] = "80";
+  char http_port[] = "80";
   rio_t rio, rio_client;
 
   Rio_readinitb(&rio, fd);
@@ -260,47 +138,12 @@ void do_proxy(int fd)
 
   size_t i_contents_length = (size_t)atol(contents_length);
 
-// DEBUG - traversal cache
-printf("===== in cache ====\n");
-  for (size_t i = 0; i < MAX_CACHENODE_SIZE; i++)
-  {
-    if (pcache.cache[i] == NULL) break;
-    else {
-      printf("index: %ld\n", i);
-      printf("data address: %p\n", pcache.cache[i]->data);
-      printf("url address: %p\n", pcache.cache[i]->url);
-      printf("url data: %s\n", pcache.cache[i]->url);
-      printf("data size: %d\n", pcache.cache[i]->size);
-      printf("refer cnt: %d\n", pcache.cache[i]->refer_cnt);
-    }
-  }
-printf("===== end cache ====\n");
-
-  // Cache hit
-  int cachedNum;
-  printf("searching filename: %s \n", filename);
-  if ((cachedNum = search_cache(filename)) >= 0) {
-    // serve static
-    printf("cache hit! \n");
-    Rio_writen(fd, response_header, strlen(response_header));
-    Rio_writen(fd, pcache.cache[cachedNum]->data, i_contents_length);
-    return;
-  }
-
-  /* Cache miss */
-
   // Get Response Body from server
   void *srcp = Malloc(i_contents_length);
   Rio_readnb(&rio_client, srcp, i_contents_length);
-
-  // Caching / Policy: LRU / consider MAX_OBJECT_SIZE, MAX_CACHE_SIZE
-  if (i_contents_length <= MAX_OBJECT_SIZE) {
-    cache_insert(uri, srcp, i_contents_length);
-  }
-
   Rio_writen(fd, response_header, strlen(response_header));
   Rio_writen(fd, srcp, i_contents_length);
-  // Free(srcp);
+  Free(srcp);
 }
 
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg)
@@ -412,20 +255,4 @@ void serve_static(int fd, char *filename, int filesize, char *method)
     // Munmap(srcp, filesize);
     Free(srcp);
   }
-}
-
-void get_filetype(char *filename, char *filetype)
-{
-  if (strstr(filename, ".html"))
-    strcpy(filetype, "text/html");
-  else if (strstr(filename, ".gif"))
-    strcpy(filetype, "image/gif");
-  else if (strstr(filename, ".png"))
-    strcpy(filetype, "image/png");
-  else if (strstr(filename, ".jpg"))
-    strcpy(filetype, "image/jpeg");
-  else if (strstr(filename, ".mp4"))
-    strcpy(filetype, "video/mp4");
-  else
-    strcpy(filetype, "text/plain");
 }
